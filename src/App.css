@@ -1,0 +1,504 @@
+.appRoot {
+  min-height: 100vh;
+}
+
+.appTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.appTopBarSpacer {
+  flex: 1;
+}
+
+.userBadge {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  max-width: min(40vw, 220px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appShell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.sessionTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.sessionTitleHeading {
+  font-size: 1.5rem;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.iconPenBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  aspect-ratio: 1 / 1;
+  height: 100%;
+  color: #0f172a;
+}
+
+.iconPenBtn:focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+}
+
+.iconPenBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.iconPenSvg {
+  display: block;
+}
+
+.qrShareRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.65rem;
+  width: 100%;
+}
+
+.qrShareText {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.inviteCopiedFeedback {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #15803d;
+}
+
+.iconCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.iconCopyBtn:focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+}
+
+.iconCopySvg {
+  display: block;
+}
+
+.dialogIconActions {
+  gap: 0.5rem;
+}
+
+.iconDialogBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.iconDialogBtn:focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+}
+
+.iconDialogBtnPrimary {
+  border-color: #0369a1;
+  background: #0369a1;
+  color: #fff;
+}
+
+.iconDialogBtnPrimary:hover {
+  filter: brightness(1.06);
+}
+
+.iconDialogBtnToggled {
+  border-color: #0369a1;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.iconDialogBtnToggled:hover {
+  filter: brightness(0.97);
+}
+
+.claimItemDialog {
+  min-width: 300px;
+}
+
+.claimDialogTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.claimDialogTitle {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.iconDialogBtnDanger {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.iconDialogBtnDanger:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.iconDialogBtnDanger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.iconDialogSvg {
+  display: block;
+}
+
+.sessionTopBar {
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.sessionTopBarEnd {
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.iconLockBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.iconLockBtn:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.iconLockBtn:focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+}
+
+.iconLockBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.iconLockBtnReadonly {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.iconLockBtnLocked {
+  opacity: 0.85;
+  border-style: solid;
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.iconLockSvg {
+  display: block;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 6%);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.btn {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+}
+
+.btnPrimary {
+  border-color: #0369a1;
+  background: #0369a1;
+  color: #fff;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btnDanger {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.muted {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  font-size: 0.8rem;
+}
+
+.badgeLocked {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field input {
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+}
+
+.receiptWrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+}
+
+.receiptImg {
+  border-radius: 12px;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+}
+
+.marker {
+  position: absolute;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  max-width: 14px;
+  max-height: 14px;
+  padding: 0;
+  margin: 0;
+  border: 2px solid #0f172a;
+  border-radius: 50%;
+  background: #facc15;
+  box-shadow: 0 0 0 2px rgb(250 204 21 / 35%);
+  cursor: pointer;
+  display: block;
+  line-height: 0;
+  font-size: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  translate: -50% -50%;
+  overflow: hidden;
+}
+
+.marker::-moz-focus-inner {
+  border: 0;
+  padding: 0;
+}
+
+.markerMine {
+  background: #4ade80;
+}
+
+.markerFull {
+  background: #94a3b8;
+  cursor: default;
+}
+
+.qrBox {
+  align-self: center;
+  padding: 0.75rem;
+  background: #fff;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.45rem 0.35rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* Last column: right-aligned, shrink-to-fit (Action / Open / PAID, etc.) */
+.table.tableActionLast thead th:last-child,
+.table.tableActionLast tbody tr:not(.tableGroupHead) td:last-child {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.table.tableActionLast .tableGroupHead td {
+  text-align: left;
+  width: auto;
+  white-space: normal;
+}
+
+/* Claim dialog: slot rows match hand-button height */
+.claimSlotsTable {
+  --slot-hand-size: 2.25rem;
+}
+
+.claimSlotsTable thead th,
+.claimSlotsTable tbody td {
+  height: var(--slot-hand-size);
+  padding: 0 0.35rem;
+  vertical-align: middle;
+  line-height: var(--slot-hand-size);
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claimSlotsTable .btnSlotHand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--slot-hand-size);
+  height: var(--slot-hand-size);
+  padding: 0;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid #0369a1;
+  background: #0369a1;
+  color: #fff;
+  cursor: pointer;
+  line-height: 0;
+  box-sizing: border-box;
+}
+
+.claimSlotsTable .btnSlotHand:hover {
+  filter: brightness(1.06);
+}
+
+.claimSlotsTable .btnSlotHand:focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+}
+
+.claimSlotsTable .btnSlotHandRelease {
+  border-color: #15803d;
+  background: #4ade80;
+  color: #14532d;
+}
+
+.claimSlotsTable .btnSlotHandRelease:hover {
+  filter: brightness(1.04);
+}
+
+.claimSlotsTable .btnSlotHandRelease:focus-visible {
+  outline-color: #15803d;
+}
+
+.claimSlotsTable .btnSlotHandSvg {
+  display: block;
+}
+
+.tableGroupHead td {
+  background: #f1f5f9;
+  font-weight: 600;
+  border-bottom: 1px solid #cbd5e1;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.alert {
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+}
