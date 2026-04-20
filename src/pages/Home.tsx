@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { ReceiptBoard } from '../components/ReceiptBoard'
 import { useAuth } from '../lib/auth'
 import { formatErrorMessage } from '../lib/errors'
 import { defaultNewSessionTitle, formatSessionCreatedAt } from '../lib/sessionDisplay'
@@ -234,9 +235,14 @@ export function Home() {
 
         {previewUrl ? (
           <div className="stack">
-            <div className="receiptWrap" style={{ maxHeight: '50vh' }}>
-              <img src={previewUrl} alt="Receipt preview" className="receiptImg" />
-            </div>
+            <ReceiptBoard
+              imageUrl={previewUrl}
+              splitItems={[]}
+              claims={[]}
+              myUserId={null}
+              sessionOpen={false}
+              hostMode={false}
+            />
             <p className="muted">{receiptFile?.name}</p>
             <div className="row">
               <button type="button" className="btn" disabled={busy} onClick={() => setFileAndPreview(null)}>

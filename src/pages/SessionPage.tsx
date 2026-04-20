@@ -466,6 +466,7 @@ export function SessionPage() {
 
   const kickGuest = async (guestUserId: string) => {
     if (!sessionId || !isHost) return
+    if (!sessionOpen) return
     if (!window.confirm('Remove this guest from the bill? Their slot claims will be cleared.')) return
     setKickingUserId(guestUserId)
     setActionError(null)
@@ -743,7 +744,7 @@ export function SessionPage() {
                       <td>{p.role}</td>
                       {isHost ? (
                         <td>
-                          {p.role === 'guest' ? (
+                          {p.role === 'guest' && sessionOpen ? (
                             <button
                               type="button"
                               className="btn btnDanger"
