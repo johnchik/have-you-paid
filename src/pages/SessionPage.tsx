@@ -72,6 +72,8 @@ export function SessionPage() {
   const sessionTitleInputRef = useRef<HTMLInputElement>(null)
   const [joinUrlCopied, setJoinUrlCopied] = useState(false)
   const joinUrlCopyTimerRef = useRef<number>(null)
+  const claimInFlightRef = useRef<Set<string>>(new Set())
+  const releaseInFlightRef = useRef<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     if (!sessionId || !user) return
@@ -369,22 +371,34 @@ export function SessionPage() {
   const claimSlotAtIndex = async (slotIndex: number) => {
     if (!user || !itemDialogId || !dialogItem) return
     if (!sessionOpen) return
+    const key = `${itemDialogId}:${slotIndex}`
+    if (claimInFlightRef.current.has(key)) return
+    claimInFlightRef.current.add(key)
     setActionError(null)
     try {
-      const { error } = await supabase.from('split_item_slot_claims').insert({
-        split_item_id: itemDialogId,
-        slot_index: slotIndex,
-        claimed_by_user_id: user.id,
-      })
+      // Idempotent under rapid clicks: if the slot is already claimed, ignore the duplicate.
+      // This preserves the unique constraint and avoids accidentally overwriting someone else's claim.
+      const { error } = await supabase.from('split_item_slot_claims').upsert(
+        {
+          split_item_id: itemDialogId,
+          slot_index: slotIndex,
+          claimed_by_user_id: user.id,
+        },
+        { onConflict: 'split_item_id,slot_index', ignoreDuplicates: true },
+      )
       if (error) throw error
       await load()
     } catch (e: unknown) {
       setActionError(formatErrorMessage(e))
+    } finally {
+      claimInFlightRef.current.delete(key)
     }
   }
 
   const releaseClaim = async (claimId: string) => {
     if (!sessionOpen) return
+    if (releaseInFlightRef.current.has(claimId)) return
+    releaseInFlightRef.current.add(claimId)
     setActionError(null)
     try {
       const { error } = await supabase.from('split_item_slot_claims').delete().eq('id', claimId)
@@ -392,6 +406,8 @@ export function SessionPage() {
       await load()
     } catch (e: unknown) {
       setActionError(formatErrorMessage(e))
+    } finally {
+      releaseInFlightRef.current.delete(claimId)
     }
   }
 

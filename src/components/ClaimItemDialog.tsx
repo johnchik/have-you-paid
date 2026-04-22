@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   IoCheckmarkOutline,
   IoHandLeftOutline,
@@ -51,9 +51,16 @@ export function ClaimItemDialog({
   onReleaseClaim,
 }: ClaimItemDialogProps) {
   const [hostLineEditMode, setHostLineEditMode] = useState(false)
+  const [claimBusySlots, setClaimBusySlots] = useState<Set<number>>(() => new Set())
+  const [releaseBusyIds, setReleaseBusyIds] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
     setHostLineEditMode(false)
+  }, [item.id])
+
+  useEffect(() => {
+    setClaimBusySlots(new Set())
+    setReleaseBusyIds(new Set())
   }, [item.id])
 
   const toggleHostEditMode = () => {
@@ -69,6 +76,9 @@ export function ClaimItemDialog({
     await onSaveHostLine()
     setHostLineEditMode(false)
   }
+
+  const claimBusySlotsKey = useMemo(() => claimBusySlots, [claimBusySlots])
+  const releaseBusyIdsKey = useMemo(() => releaseBusyIds, [releaseBusyIds])
 
   return (
     <dialog open className="card claimItemDialog" style={{ position: 'fixed', inset: 'auto', margin: 'auto', zIndex: 20 }}>
@@ -111,6 +121,8 @@ export function ClaimItemDialog({
               {Array.from({ length: item.slot_count }, (_, i) => i + 1).map((n) => {
                 const claim = itemClaims.find((c) => c.slot_index === n)
                 const mine = !!(claim && claim.claimed_by_user_id === myUserId)
+                const claimBusy = claimBusySlotsKey.has(n)
+                const releaseBusy = claim ? releaseBusyIdsKey.has(claim.id) : false
                 return (
                   <tr key={n}>
                     <td>{n}</td>
@@ -128,9 +140,24 @@ export function ClaimItemDialog({
                         <button
                           type="button"
                           className="btnSlotHand btnSlotHandClaim"
-                          onClick={() => void onClaimSlot(n)}
+                          disabled={claimBusy}
+                          onClick={() => {
+                            if (claimBusySlotsKey.has(n)) return
+                            setClaimBusySlots((prev) => new Set(prev).add(n))
+                            void (async () => {
+                              try {
+                                await onClaimSlot(n)
+                              } finally {
+                                setClaimBusySlots((prev) => {
+                                  const next = new Set(prev)
+                                  next.delete(n)
+                                  return next
+                                })
+                              }
+                            })()
+                          }}
                           aria-label="Claim this slot"
-                          title="Claim"
+                          title={claimBusy ? 'Claiming…' : 'Claim'}
                         >
                           <IoHandLeftOutline className="btnSlotHandSvg" size={18} aria-hidden />
                         </button>
@@ -138,9 +165,24 @@ export function ClaimItemDialog({
                         <button
                           type="button"
                           className="btnSlotHand btnSlotHandRelease"
-                          onClick={() => void onReleaseClaim(claim.id)}
+                          disabled={releaseBusy}
+                          onClick={() => {
+                            if (releaseBusyIdsKey.has(claim.id)) return
+                            setReleaseBusyIds((prev) => new Set(prev).add(claim.id))
+                            void (async () => {
+                              try {
+                                await onReleaseClaim(claim.id)
+                              } finally {
+                                setReleaseBusyIds((prev) => {
+                                  const next = new Set(prev)
+                                  next.delete(claim.id)
+                                  return next
+                                })
+                              }
+                            })()
+                          }}
                           aria-label="Release this slot"
-                          title="Release"
+                          title={releaseBusy ? 'Releasing…' : 'Release'}
                         >
                           <IoHandLeftOutline className="btnSlotHandSvg" size={18} aria-hidden />
                         </button>
