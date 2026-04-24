@@ -74,6 +74,9 @@ export function SessionPage() {
   const joinUrlCopyTimerRef = useRef<number>(null)
   const claimInFlightRef = useRef<Set<string>>(new Set())
   const releaseInFlightRef = useRef<Set<string>>(new Set())
+  const [receiptUploading, setReceiptUploading] = useState(false)
+  const receiptFileInputRef = useRef<HTMLInputElement>(null)
+  const receiptCaptureInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     if (!sessionId || !user) return
@@ -236,6 +239,11 @@ export function SessionPage() {
     return session.host_user_id === user.id
   }, [session, user])
 
+  const hasReceipt = useMemo(() => {
+    const p = session?.receipt_storage_path?.trim() ?? ''
+    return p.length > 0
+  }, [session?.receipt_storage_path])
+
   const amParticipant = useMemo(() => {
     if (!user) return false
     return participants.some((p) => p.user_id === user.id)
@@ -247,6 +255,10 @@ export function SessionPage() {
   )
 
   const sessionOpen = session?.status === 'open'
+
+  /** Host must upload a receipt before adding lines or locking (DB enforces this too). */
+  const hostAwaitingReceipt = isHost && !!sessionOpen && !hasReceipt
+
   const filled = useMemo(() => allSplitItemsFilled(splitItems, claims), [splitItems, claims])
   const myAck = useMemo(() => {
     if (!user) return null
@@ -305,8 +317,39 @@ export function SessionPage() {
     setHostEditSlotCount(dialogItem.slot_count)
   }, [itemDialogId, dialogItem?.id, dialogItem?.label, dialogItem?.slot_count, isHost])
 
+  const uploadSessionReceipt = async (file: File) => {
+    if (!sessionId || !isHost) return
+    if (!file.type.startsWith('image/')) {
+      setActionError('Please choose an image file.')
+      return
+    }
+    setReceiptUploading(true)
+    setActionError(null)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const path = `${sessionId}/receipt.${ext}`
+      const { error: uErr } = await supabase.storage.from('receipts').upload(path, file, {
+        upsert: true,
+        contentType: file.type || 'image/jpeg',
+      })
+      if (uErr) throw uErr
+      const { error: upErr } = await supabase
+        .from('sessions')
+        .update({ receipt_storage_path: path })
+        .eq('id', sessionId)
+      if (upErr) throw upErr
+      if (receiptFileInputRef.current) receiptFileInputRef.current.value = ''
+      if (receiptCaptureInputRef.current) receiptCaptureInputRef.current.value = ''
+      await load()
+    } catch (e: unknown) {
+      setActionError(formatErrorMessage(e))
+    } finally {
+      setReceiptUploading(false)
+    }
+  }
+
   const saveNewSplitItem = async () => {
-    if (!sessionId || !user || !pendingPos) return
+    if (!sessionId || !user || !pendingPos || !hasReceipt) return
     setActionError(null)
     const count = Math.min(20, Math.max(1, Math.floor(addSlotDraft)))
     const label = addLabelDraft.trim() || null
@@ -517,7 +560,7 @@ export function SessionPage() {
   }
 
   const lockSession = async () => {
-    if (!sessionId || !filled) return
+    if (!sessionId || !filled || !hasReceipt) return
     setLockBusy(true)
     setActionError(null)
     try {
@@ -587,13 +630,21 @@ export function SessionPage() {
           <button
             type="button"
             className="iconLockBtn"
-            disabled={!filled || lockBusy}
+            disabled={!hasReceipt || !filled || lockBusy}
             onClick={() => void lockSession()}
-            aria-label={filled ? 'Lock session' : 'Lock session (available when every slot is claimed)'}
+            aria-label={
+              !hasReceipt
+                ? 'Lock session (upload a receipt image first)'
+                : filled
+                  ? 'Lock session'
+                  : 'Lock session (available when every slot is claimed)'
+            }
             title={
-              filled
-                ? 'Lock session — guests can then confirm PAID.'
-                : 'Lock when every items has all slots claimed.'
+              !hasReceipt
+                ? 'Upload a receipt image before you can lock the session.'
+                : filled
+                  ? 'Lock session — guests can then confirm PAID.'
+                  : 'Lock when every line has all slots claimed.'
             }
           >
             <IoLockClosedOutline className="iconLockSvg" size={22} aria-hidden />
@@ -793,15 +844,67 @@ export function SessionPage() {
 
           <section className="card stack">
             <h2 className="h2">Receipt</h2>
-            {sessionOpen ? (
+            {hostAwaitingReceipt ? (
               <p className="muted">
-                {isHost
-                  ? 'Tap the receipt to add a line. Tap a marker to claim or release slots, or edit the line (host). When every slot is claimed, use the lock in the top bar to close the bill.'
-                  : 'Tap a marker to see slots — use Claim or Release on each row.'}
+                Upload a photo of the receipt to add share lines and to lock the bill. You can still share the
+                join link and set the session name. Guests can join, but there will be no lines to claim until
+                the image is here.
               </p>
+            ) : sessionOpen ? (
+              isHost ? (
+                <p className="muted">
+                  Tap the receipt to add a line. Tap a marker to claim or release slots, or edit the line (host). When
+                  every slot is claimed, use the lock in the top bar to close the bill.
+                </p>
+              ) : (
+                <div className="stack">
+                  <p className="muted">Tap a marker to see slots — use Claim or Release on each row.</p>
+                  <p className="muted">
+                    After the host locks the session, the Payment section appears — tap PAID when you have settled with
+                    them.
+                  </p>
+                </div>
+              )
             ) : (
               <p className="muted">Session is locked. You can open markers to view who took each slot.</p>
             )}
+            {isHost && sessionOpen && !hasReceipt ? (
+              <div className="stack">
+                <div className="row">
+                  <label className="btn btnPrimary">
+                    {receiptUploading ? 'Uploading…' : 'Upload receipt image'}
+                    <input
+                      ref={receiptFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={receiptUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) void uploadSessionReceipt(f)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                  <label className="btn">
+                    Take photo
+                    <input
+                      ref={receiptCaptureInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      hidden
+                      disabled={receiptUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) void uploadSessionReceipt(f)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
             <ReceiptBoard
               imageUrl={imageUrl}
               splitItems={splitItems}
@@ -809,7 +912,9 @@ export function SessionPage() {
               myUserId={user.id}
               sessionOpen={!!sessionOpen}
               hostMode={isHost}
-              onReceiptTap={sessionOpen && isHost ? (pos) => openAddDialog(pos) : undefined}
+              onReceiptTap={
+                sessionOpen && isHost && hasReceipt ? (pos) => openAddDialog(pos) : undefined
+              }
               onMarkerClick={(id) => openItemDialog(id)}
             />
           </section>

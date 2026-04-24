@@ -105,6 +105,33 @@ export function Home() {
     if (error) setProfileError(error.message)
   }
 
+  const createSessionWithoutImage = async () => {
+    if (!user) return
+    setBusy(true)
+    setCreateError(null)
+    try {
+      const { data: sessionRow, error: sErr } = await supabase
+        .from('sessions')
+        .insert({ host_user_id: user.id, title: defaultNewSessionTitle() })
+        .select('id')
+        .single()
+      if (sErr || !sessionRow) throw sErr ?? new Error('Failed to create session')
+      const sessionId = sessionRow.id as string
+      const { error: pErr } = await supabase.from('session_participants').insert({
+        session_id: sessionId,
+        user_id: user.id,
+        role: 'host',
+      })
+      if (pErr) throw pErr
+      await loadMySessions()
+      navigate(`/session/${sessionId}`)
+    } catch (e: unknown) {
+      setCreateError(formatErrorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const uploadSession = async () => {
     const file = receiptFile
     if (!file || !user) return
@@ -202,7 +229,21 @@ export function Home() {
 
       <section className="card stack">
         <h2 className="h2">New bill session</h2>
-        <p className="muted">Choose or take a photo, review it, then start the session.</p>
+        <p className="muted">
+          Choose or take a photo, review it, then start. Or start without a photo — you can upload the receipt
+          later, but you will not be able to add line items or lock the bill until an image is added.
+        </p>
+        <div className="row">
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => void createSessionWithoutImage()}
+          >
+            {busy ? 'Working…' : 'Start without photo'}
+          </button>
+        </div>
+        <p className="muted">Or add a photo now:</p>
         <div className="row">
           <label className="btn">
             Choose image

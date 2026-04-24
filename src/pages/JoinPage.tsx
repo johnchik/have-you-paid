@@ -20,6 +20,19 @@ export function JoinPage() {
         return
       }
 
+      // If this user is already in the session (e.g. host or guest; session may be locked),
+      // the join link should open the bill like Home → Open — not run "new guest" join rules.
+      const { data: alreadyIn } = await supabase
+        .from('session_participants')
+        .select('session_id')
+        .eq('session_id', sessionId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (alreadyIn) {
+        navigate(`/session/${sessionId}`, { replace: true })
+        return
+      }
+
       const { data: preview, error: previewErr } = await supabase.rpc('get_session_join_preview', {
         p_session_id: sessionId,
       })
