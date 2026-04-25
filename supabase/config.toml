@@ -385,6 +385,6 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 
 [functions.receipt-ocr]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/receipt-ocr/deno.json"
 entrypoint = "./functions/receipt-ocr/index.ts"
