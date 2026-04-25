@@ -1,47 +1,64 @@
-export type SessionRow = {
+export type SessionStatus = 'open' | 'settled'
+
+export type Session = {
   id: string
-  host_user_id: string
+  name: string
+  currency: string
+  status: SessionStatus
   receipt_storage_path: string | null
-  status: 'open' | 'locked'
-  locked_at: string | null
-  title: string | null
-  /** null = no cap on guest joins (host is not counted). */
-  max_guests: number | null
   created_at: string
 }
 
-export type SessionParticipantRow = {
-  session_id: string
-  user_id: string
-  role: 'host' | 'guest'
-  joined_at: string
-}
+export type SessionMemberStatus = 'placeholder' | 'claimed' | 'linked'
 
-export type SplitItemRow = {
+export type SessionMember = {
   id: string
   session_id: string
-  slot_count: number
-  anchor_x: number
-  anchor_y: number
-  label: string | null
+  display_name: string
+  guest_token: string | null
+  user_id: string | null
+  is_host: boolean
+  status: SessionMemberStatus
+  avatar_color: string | null
+  claimed_at: string | null
   created_at: string
 }
 
-export type SlotClaimRow = {
+export type ExpenseSource = 'ocr' | 'manual'
+
+export type Expense = {
   id: string
-  split_item_id: string
-  slot_index: number
-  claimed_by_user_id: string
-  claimed_at: string
-}
-
-export type PaymentAckRow = {
   session_id: string
-  user_id: string
-  acknowledged_at: string
+  name: string
+  amount: number
+  source: ExpenseSource
+  sort_order: number | null
+  ocr_confidence: number | null
+  created_at: string
 }
 
-export type ProfileRow = {
+export type ExpenseClaim = {
+  id: string
+  expense_id: string
+  member_id: string
+  share_amount: number
+  created_at: string
+}
+
+export type SettlementStatus = 'pending' | 'confirmed'
+
+export type Settlement = {
+  id: string
+  session_id: string
+  from_member_id: string
+  to_member_id: string
+  amount: number
+  status: SettlementStatus
+  created_at: string
+  confirmed_at: string | null
+}
+
+export type Profile = {
   id: string
   display_name: string
   updated_at: string

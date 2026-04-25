@@ -1,307 +1,260 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ReceiptBoard } from '../components/ReceiptBoard'
 import { useAuth } from '../lib/auth'
+import { ErrorPopup } from '../components/ErrorPopup'
 import { formatErrorMessage } from '../lib/errors'
+import { defaultGuestDisplayName, getOrCreateGuestToken, setGuestDisplayName } from '../lib/guestIdentity'
 import { defaultNewSessionTitle, formatSessionCreatedAt } from '../lib/sessionDisplay'
 import { supabase } from '../lib/supabaseClient'
-import type { SessionRow } from '../lib/types'
+import type { Session, SessionMember } from '../lib/types'
 
-type ParticipantWithSession = {
-  session_id: string
-  joined_at: string
-  sessions: SessionRow | null
+type SessionListItem = {
+  session: Session
+  member: SessionMember
 }
+
+const DEFAULT_CURRENCY = 'HKD'
 
 export function Home() {
   const navigate = useNavigate()
-  const { user, ready, error: authError } = useAuth()
-  const [displayName, setDisplayName] = useState('')
+  const { user, ready } = useAuth()
+  const guestToken = useMemo(() => getOrCreateGuestToken(), [])
+
+  const [displayName, setDisplayName] = useState(defaultGuestDisplayName())
   const [profileError, setProfileError] = useState<string | null>(null)
-  const [sessions, setSessions] = useState<ParticipantWithSession[]>([])
-  const [loadingSessions, setLoadingSessions] = useState(true)
-  const [busy, setBusy] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
+  const [sessionName, setSessionName] = useState(defaultNewSessionTitle())
+  const [currency, setCurrency] = useState(DEFAULT_CURRENCY)
+  const [createBusy, setCreateBusy] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
-
-  const [receiptFile, setReceiptFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const previewUrlRef = useRef<string | null>(null)
-
-  const setFileAndPreview = useCallback((file: File | null) => {
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current)
-      previewUrlRef.current = null
-    }
-    setReceiptFile(file)
-    if (file) {
-      const url = URL.createObjectURL(file)
-      previewUrlRef.current = url
-      setPreviewUrl(url)
-    } else {
-      setPreviewUrl(null)
-    }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      if (previewUrlRef.current) {
-        URL.revokeObjectURL(previewUrlRef.current)
-      }
-    }
-  }, [])
+  const [sessions, setSessions] = useState<SessionListItem[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(true)
 
   const loadMySessions = useCallback(async () => {
-    if (!user) {
-      setSessions([])
-      setLoadingSessions(false)
-      return
-    }
-    setLoadingSessions(true)
-    const { data, error } = await supabase
-      .from('session_participants')
-      .select('session_id, joined_at, sessions(*)')
-      .eq('user_id', user.id)
-      .order('joined_at', { ascending: false })
-    if (error) {
+    setSessionsLoading(true)
+
+    try {
+      let memberRows: SessionMember[] = []
+
+      const { data: guestRows, error: guestError } = await supabase
+        .from('session_members')
+        .select('*')
+        .eq('guest_token', guestToken)
+        .order('created_at', { ascending: false })
+      if (guestError) throw guestError
+      memberRows = (guestRows ?? []) as SessionMember[]
+
+      if (user?.id) {
+        const { data: linkedRows, error: linkedError } = await supabase
+          .from('session_members')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+        if (linkedError) throw linkedError
+
+        const seen = new Set(memberRows.map((row) => row.id))
+        for (const row of (linkedRows ?? []) as SessionMember[]) {
+          if (!seen.has(row.id)) {
+            memberRows.push(row)
+          }
+        }
+      }
+
+      const sessionIds = [...new Set(memberRows.map((row) => row.session_id))]
+      if (sessionIds.length === 0) {
+        setSessions([])
+        setSessionsLoading(false)
+        return
+      }
+
+      const { data: sessionRows, error: sessionError } = await supabase
+        .from('sessions')
+        .select('*')
+        .in('id', sessionIds)
+        .order('created_at', { ascending: false })
+      if (sessionError) throw sessionError
+
+      const sessionMap = new Map(((sessionRows ?? []) as Session[]).map((session) => [session.id, session]))
+      const nextItems = memberRows
+        .map((member) => {
+          const session = sessionMap.get(member.session_id)
+          return session ? { session, member } : null
+        })
+        .filter((item): item is SessionListItem => item !== null)
+        .sort((left, right) => new Date(right.session.created_at).getTime() - new Date(left.session.created_at).getTime())
+
+      setSessions(nextItems)
+    } catch (error: unknown) {
       console.error(error)
       setSessions([])
-    } else {
-      const normalized: ParticipantWithSession[] = (data ?? []).map((row: Record<string, unknown>) => {
-        const s = row.sessions
-        const sessionRow =
-          s && typeof s === 'object' && !Array.isArray(s)
-            ? (s as SessionRow)
-            : Array.isArray(s) && s[0]
-              ? (s[0] as SessionRow)
-              : null
-        return {
-          session_id: row.session_id as string,
-          joined_at: row.joined_at as string,
-          sessions: sessionRow,
-        }
-      })
-      setSessions(normalized)
+    } finally {
+      setSessionsLoading(false)
     }
-    setLoadingSessions(false)
-  }, [user])
+  }, [guestToken, user?.id])
 
   useEffect(() => {
+    if (user?.id) {
+      void (async () => {
+        const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle()
+        if (data?.display_name?.trim()) {
+          setDisplayName(data.display_name.trim())
+        }
+      })()
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!ready) return
     void loadMySessions()
-  }, [loadMySessions])
+  }, [loadMySessions, ready])
 
   useEffect(() => {
-    if (!user) return
-    void (async () => {
-      const { data } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle()
-      if (data?.display_name) setDisplayName(data.display_name)
-    })()
-  }, [user])
+    if (!profileError && !createError) return
+    const timer = window.setTimeout(() => {
+      setProfileError(null)
+      setCreateError(null)
+    }, 4000)
+    return () => window.clearTimeout(timer)
+  }, [createError, profileError])
 
   const saveDisplayName = async () => {
-    if (!user) return
+    const trimmed = displayName.trim() || 'Guest'
     setProfileError(null)
-    const name = displayName.trim() || 'Guest'
-    const { error } = await supabase.from('profiles').upsert({ id: user.id, display_name: name })
-    if (error) setProfileError(error.message)
-  }
+    setProfileSaved(false)
+    setGuestDisplayName(trimmed)
 
-  const createSessionWithoutImage = async () => {
-    if (!user) return
-    setBusy(true)
-    setCreateError(null)
-    try {
-      const { data: sessionRow, error: sErr } = await supabase
-        .from('sessions')
-        .insert({ host_user_id: user.id, title: defaultNewSessionTitle() })
-        .select('id')
-        .single()
-      if (sErr || !sessionRow) throw sErr ?? new Error('Failed to create session')
-      const sessionId = sessionRow.id as string
-      const { error: pErr } = await supabase.from('session_participants').insert({
-        session_id: sessionId,
-        user_id: user.id,
-        role: 'host',
-      })
-      if (pErr) throw pErr
-      await loadMySessions()
-      navigate(`/session/${sessionId}`)
-    } catch (e: unknown) {
-      setCreateError(formatErrorMessage(e))
-    } finally {
-      setBusy(false)
+    if (user?.id) {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: user.id, display_name: trimmed }, { onConflict: 'id' })
+      if (error) {
+        setProfileError(error.message)
+        return
+      }
     }
-  }
 
-  const uploadSession = async () => {
-    const file = receiptFile
-    if (!file || !user) return
-    setBusy(true)
-    setCreateError(null)
-    try {
-      const { data: sessionRow, error: sErr } = await supabase
-        .from('sessions')
-        .insert({ host_user_id: user.id, title: defaultNewSessionTitle() })
-        .select('id')
-        .single()
-      if (sErr || !sessionRow) throw sErr ?? new Error('Failed to create session')
-
-      const sessionId = sessionRow.id as string
-
-      const { error: pErr } = await supabase.from('session_participants').insert({
-        session_id: sessionId,
-        user_id: user.id,
-        role: 'host',
-      })
-      if (pErr) throw pErr
-
-      const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-      const path = `${sessionId}/receipt.${ext}`
-      const { error: uErr } = await supabase.storage.from('receipts').upload(path, file, {
-        upsert: true,
-        contentType: file.type || 'image/jpeg',
-      })
-      if (uErr) throw uErr
-
-      const { error: upErr } = await supabase
-        .from('sessions')
-        .update({ receipt_storage_path: path })
-        .eq('id', sessionId)
-      if (upErr) throw upErr
-
-      setFileAndPreview(null)
-      await loadMySessions()
-      navigate(`/session/${sessionId}`)
-    } catch (e: unknown) {
-      setCreateError(formatErrorMessage(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const onPickFile = (file: File | null) => {
-    if (!file || !file.type.startsWith('image/')) {
-      setCreateError('Please choose an image file.')
+    const { error: memberError } = await supabase
+      .from('session_members')
+      .update({ display_name: trimmed })
+      .eq('guest_token', guestToken)
+      .neq('status', 'placeholder')
+    if (memberError) {
+      setProfileError(memberError.message)
       return
     }
+
+    setDisplayName(trimmed)
+    setProfileSaved(true)
+    await loadMySessions()
+  }
+
+  const createSession = async () => {
+    const trimmedSessionName = sessionName.trim()
+    const trimmedDisplayName = (displayName.trim() || 'Guest').slice(0, 80)
+
+    if (!trimmedSessionName) {
+      setCreateError('Session name is required.')
+      return
+    }
+
+    setCreateBusy(true)
     setCreateError(null)
-    setFileAndPreview(file)
-  }
 
-  if (!ready) {
-    return (
-      <div className="appShell">
-        <p className="muted">Starting…</p>
-      </div>
-    )
-  }
+    try {
+      setGuestDisplayName(trimmedDisplayName)
 
-  if (authError || !user) {
-    return (
-      <div className="appShell">
-        <div className="alert">{authError ?? 'Not signed in.'}</div>
-      </div>
-    )
+      const { data: sessionRow, error: sessionError } = await supabase
+        .from('sessions')
+        .insert({
+          name: trimmedSessionName,
+          currency: currency.trim().toUpperCase() || DEFAULT_CURRENCY,
+        })
+        .select('*')
+        .single()
+      if (sessionError) throw sessionError
+
+      const { error: hostError } = await supabase.from('session_members').insert({
+        session_id: (sessionRow as Session).id,
+        display_name: trimmedDisplayName,
+        guest_token: guestToken,
+        user_id: user?.id ?? null,
+        is_host: true,
+        status: user?.id ? 'linked' : 'claimed',
+        claimed_at: new Date().toISOString(),
+      })
+      if (hostError) throw hostError
+
+      await loadMySessions()
+      navigate(`/session/${(sessionRow as Session).id}`)
+    } catch (error: unknown) {
+      setCreateError(formatErrorMessage(error))
+    } finally {
+      setCreateBusy(false)
+    }
   }
 
   return (
     <div className="appShell stack">
-      <header>
+      <header className="stack">
         <h1 className="h1">Have you paid?</h1>
-        <p className="muted">Share a receipt, tag items, and track who has paid.</p>
+        <p className="muted">Create a settle-up session, share the join link, and track expenses by guest token first.</p>
       </header>
 
       <section className="card stack">
-        <h2 className="h2">Your name</h2>
-        <p className="muted">Shown to others in the session.</p>
+        <h2 className="h2">Your identity</h2>
+        <p className="muted">
+          You can use the app as a guest. If you later sign in, the same guest token can be linked to your account.
+        </p>
         <div className="row">
-          <input
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Guest"
-            aria-label="Display name"
-          />
+          <label className="field growField">
+            Display name
+            <input
+              type="text"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder="Guest"
+            />
+          </label>
           <button type="button" className="btn btnPrimary" onClick={() => void saveDisplayName()}>
             Save
           </button>
         </div>
-        {profileError ? <p className="muted">{profileError}</p> : null}
+        <p className="muted">Guest token: {guestToken}</p>
+        {user ? <p className="muted">Linked auth user: {user.email ?? user.id}</p> : <p className="muted">Auth linking is optional.</p>}
+        {profileSaved ? <p className="muted">Saved.</p> : null}
       </section>
 
       <section className="card stack">
-        <h2 className="h2">New bill session</h2>
-        <p className="muted">
-          Choose or take a photo, review it, then start. Or start without a photo — you can upload the receipt
-          later, but you will not be able to add line items or lock the bill until an image is added.
-        </p>
+        <h2 className="h2">Create session</h2>
         <div className="row">
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => void createSessionWithoutImage()}
-          >
-            {busy ? 'Working…' : 'Start without photo'}
+          <label className="field growField">
+            Session name
+            <input
+              type="text"
+              value={sessionName}
+              onChange={(event) => setSessionName(event.target.value)}
+              placeholder="Team lunch"
+            />
+          </label>
+          <label className="field currencyField">
+            Currency
+            <input
+              type="text"
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+              maxLength={8}
+              placeholder="HKD"
+            />
+          </label>
+          <button type="button" className="btn btnPrimary" disabled={createBusy} onClick={() => void createSession()}>
+            {createBusy ? 'Creating…' : 'Create session'}
           </button>
         </div>
-        <p className="muted">Or add a photo now:</p>
-        <div className="row">
-          <label className="btn">
-            Choose image
-            <input
-              type="file"
-              accept="image/*"
-              hidden
-              disabled={busy}
-              onChange={(e) => {
-                onPickFile(e.target.files?.[0] ?? null)
-                e.target.value = ''
-              }}
-            />
-          </label>
-          <label className="btn">
-            Take photo
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              hidden
-              disabled={busy}
-              onChange={(e) => {
-                onPickFile(e.target.files?.[0] ?? null)
-                e.target.value = ''
-              }}
-            />
-          </label>
-        </div>
-
-        {previewUrl ? (
-          <div className="stack">
-            <ReceiptBoard
-              imageUrl={previewUrl}
-              splitItems={[]}
-              claims={[]}
-              myUserId={null}
-              sessionOpen={false}
-              hostMode={false}
-            />
-            <p className="muted">{receiptFile?.name}</p>
-            <div className="row">
-              <button type="button" className="btn" disabled={busy} onClick={() => setFileAndPreview(null)}>
-                Change image
-              </button>
-              <button type="button" className="btn btnPrimary" disabled={busy} onClick={() => void uploadSession()}>
-                {busy ? 'Working…' : 'Start session with this image'}
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {createError ? <p className="muted">{createError}</p> : null}
       </section>
 
       <section className="card stack">
-        <h2 className="h2">My sessions</h2>
-        {loadingSessions ? (
+        <h2 className="h2">Your sessions</h2>
+        {sessionsLoading ? (
           <p className="muted">Loading…</p>
         ) : sessions.length === 0 ? (
           <p className="muted">No sessions yet.</p>
@@ -310,32 +263,33 @@ export function Home() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Created</th>
                 <th>Status</th>
+                <th>Your role</th>
+                <th>Created</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {sessions.map((row) => {
-                const s = row.sessions
-                if (!s) return null
-                return (
-                  <tr key={row.session_id}>
-                    <td>{s.title?.trim() || 'Untitled'}</td>
-                    <td className="muted">{formatSessionCreatedAt(s.created_at)}</td>
-                    <td>
-                      <span className={s.status === 'locked' ? 'badge badgeLocked' : 'badge'}>{s.status}</span>
-                    </td>
-                    <td>
-                      <Link to={`/session/${s.id}`}>Open</Link>
-                    </td>
-                  </tr>
-                )
-              })}
+              {sessions.map(({ session, member }) => (
+                <tr key={member.id}>
+                  <td>{session.name}</td>
+                  <td>
+                    <span className={session.status === 'settled' ? 'badge badgeLocked' : 'badge'}>{session.status}</span>
+                  </td>
+                  <td>{member.is_host ? 'Host' : member.status === 'placeholder' ? 'Placeholder' : 'Member'}</td>
+                  <td className="muted">{formatSessionCreatedAt(session.created_at)}</td>
+                  <td>
+                    <Link to={`/session/${session.id}`}>Open</Link>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
       </section>
+
+      {profileError ? <ErrorPopup message={profileError} onClose={() => setProfileError(null)} /> : null}
+      {createError ? <ErrorPopup message={createError} onClose={() => setCreateError(null)} /> : null}
     </div>
   )
 }

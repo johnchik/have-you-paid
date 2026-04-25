@@ -1,91 +1,225 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { ErrorPopup } from '../components/ErrorPopup'
 import { formatErrorMessage } from '../lib/errors'
+import { defaultGuestDisplayName, getOrCreateGuestToken, setGuestDisplayName } from '../lib/guestIdentity'
 import { supabase } from '../lib/supabaseClient'
+import type { Session, SessionMember } from '../lib/types'
 import { isUuid } from '../lib/uuid'
 
 export function JoinPage() {
   const { sessionId } = useParams()
   const navigate = useNavigate()
-  const { user, ready, error: authError } = useAuth()
-  const [message, setMessage] = useState<string | null>(null)
+  const { user, ready } = useAuth()
+  const guestToken = useMemo(() => getOrCreateGuestToken(), [])
+
+  const [session, setSession] = useState<Session | null>(null)
+  const [members, setMembers] = useState<SessionMember[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [displayName, setDisplayName] = useState(defaultGuestDisplayName())
+
+  const load = useCallback(async () => {
+    if (!sessionId) return
+    if (!isUuid(sessionId)) {
+      setLoadError('Invalid session link.')
+      return
+    }
+
+    setLoadError(null)
+
+    const { data: sessionRow, error: sessionError } = await supabase.from('sessions').select('*').eq('id', sessionId).maybeSingle()
+    if (sessionError) {
+      setLoadError(sessionError.message)
+      return
+    }
+    if (!sessionRow) {
+      setLoadError('This session was not found.')
+      return
+    }
+
+    const { data: memberRows, error: memberError } = await supabase
+      .from('session_members')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+    if (memberError) {
+      setLoadError(memberError.message)
+      return
+    }
+
+    setSession(sessionRow as Session)
+    setMembers((memberRows ?? []) as SessionMember[])
+  }, [sessionId])
 
   useEffect(() => {
-    if (!ready || !user || !sessionId) return
+    if (!ready) return
+    void load()
+  }, [load, ready])
 
-    void (async () => {
-      if (!isUuid(sessionId)) {
-        setMessage('Invalid session link.')
-        return
-      }
+  useEffect(() => {
+    if (!sessionId || !ready || members.length === 0) return
 
-      // If this user is already in the session (e.g. host or guest; session may be locked),
-      // the join link should open the bill like Home → Open — not run "new guest" join rules.
-      const { data: alreadyIn } = await supabase
-        .from('session_participants')
-        .select('session_id')
-        .eq('session_id', sessionId)
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (alreadyIn) {
-        navigate(`/session/${sessionId}`, { replace: true })
-        return
-      }
+    const existingMember =
+      members.find((member) => member.guest_token === guestToken) ??
+      (user?.id ? members.find((member) => member.user_id === user.id) : null)
 
-      const { data: preview, error: previewErr } = await supabase.rpc('get_session_join_preview', {
-        p_session_id: sessionId,
-      })
-      if (previewErr) {
-        setMessage(formatErrorMessage(previewErr))
-        return
-      }
-      if (!preview?.length) {
-        setMessage('This bill was not found, or joining is closed (session locked).')
-        return
-      }
-
-      const { error: pe } = await supabase.from('session_participants').insert({
-        session_id: sessionId,
-        user_id: user.id,
-        role: 'guest',
-      })
-      if (pe) {
-        if (pe.code === '23505') {
-          navigate(`/session/${sessionId}`, { replace: true })
-          return
-        }
-        if (pe.message?.includes('Guest limit reached')) {
-          setMessage('This bill has reached its guest limit. Ask the host to raise the limit or make room.')
-          return
-        }
-        setMessage(pe.message)
-        return
-      }
+    if (existingMember && existingMember.status !== 'placeholder') {
       navigate(`/session/${sessionId}`, { replace: true })
-    })()
-  }, [ready, user, sessionId, navigate])
+    }
+  }, [guestToken, members, navigate, ready, sessionId, user?.id])
+
+  useEffect(() => {
+    if (!actionError) return
+    const timer = window.setTimeout(() => setActionError(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [actionError])
+
+  const claimPlaceholder = async (member: SessionMember) => {
+    if (!sessionId) return
+    setBusy(true)
+    setActionError(null)
+
+    try {
+      const trimmedName = (displayName.trim() || member.display_name || 'Guest').slice(0, 80)
+      setGuestDisplayName(trimmedName)
+
+      const { data, error } = await supabase
+        .from('session_members')
+        .update({
+          display_name: trimmedName,
+          guest_token: guestToken,
+          user_id: user?.id ?? null,
+          status: user?.id ? 'linked' : 'claimed',
+          claimed_at: new Date().toISOString(),
+        })
+        .eq('id', member.id)
+        .eq('status', 'placeholder')
+        .select('*')
+      if (error) throw error
+      if (!data || data.length === 0) {
+        throw new Error('That placeholder was already claimed. Refresh and choose another.')
+      }
+
+      navigate(`/session/${sessionId}`, { replace: true })
+    } catch (error: unknown) {
+      setActionError(formatErrorMessage(error))
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const joinAsNewMember = async () => {
+    if (!sessionId) return
+    setBusy(true)
+    setActionError(null)
+
+    try {
+      const trimmedName = (displayName.trim() || 'Guest').slice(0, 80)
+      setGuestDisplayName(trimmedName)
+
+      const { error } = await supabase.from('session_members').insert({
+        session_id: sessionId,
+        display_name: trimmedName,
+        guest_token: guestToken,
+        user_id: user?.id ?? null,
+        is_host: false,
+        status: user?.id ? 'linked' : 'claimed',
+        claimed_at: new Date().toISOString(),
+      })
+      if (error) throw error
+
+      navigate(`/session/${sessionId}`, { replace: true })
+    } catch (error: unknown) {
+      setActionError(formatErrorMessage(error))
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
 
   if (!ready) {
     return (
       <div className="appShell">
-        <p className="muted">Joining…</p>
+        <p className="muted">Loading join flow…</p>
       </div>
     )
   }
 
-  if (authError || !user) {
+  if (!sessionId || !isUuid(sessionId)) {
     return (
-      <div className="appShell">
-        <div className="alert">{authError ?? 'Not signed in.'}</div>
+      <div className="appShell stack">
+        <h1 className="h1">Join session</h1>
+        <div className="alert">Invalid session link.</div>
       </div>
     )
   }
+
+  const unclaimedMembers = members.filter((member) => member.status === 'placeholder')
 
   return (
     <div className="appShell stack">
-      <h1 className="h1">Join session</h1>
-      {message ? <div className="alert">{message}</div> : <p className="muted">Adding you to the bill…</p>}
+      <header className="stack">
+        <h1 className="h1">Join session</h1>
+        <p className="muted">{session ? `Claim your spot in "${session.name}".` : 'Opening session…'}</p>
+      </header>
+
+      {loadError ? <div className="alert">{loadError}</div> : null}
+
+      {!loadError && session ? (
+        <>
+          <section className="card stack">
+            <h2 className="h2">You</h2>
+            <label className="field">
+              Display name
+              <input
+                type="text"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="Guest"
+              />
+            </label>
+            <p className="muted">This browser joins as guest token `{guestToken}`.</p>
+          </section>
+
+          <section className="card stack">
+            <h2 className="h2">Claim a placeholder</h2>
+            {unclaimedMembers.length === 0 ? (
+              <p className="muted">No unclaimed placeholders are left. You can still join as a new member.</p>
+            ) : (
+              <div className="stack">
+                {unclaimedMembers.map((member) => (
+                  <div key={member.id} className="memberRow">
+                    <div>
+                      <strong>{member.display_name}</strong>
+                      <p className="muted">Placeholder</p>
+                    </div>
+                    <button type="button" className="btn btnPrimary" disabled={busy} onClick={() => void claimPlaceholder(member)}>
+                      Claim
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card stack">
+            <h2 className="h2">Not on the list?</h2>
+            <p className="muted">Create a new member if the host did not add your placeholder yet.</p>
+            <div className="row">
+              <button type="button" className="btn" disabled={busy} onClick={() => void joinAsNewMember()}>
+                {busy ? 'Joining…' : 'Join as new member'}
+              </button>
+              <Link to={`/session/${sessionId}`}>Open session</Link>
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {actionError ? <ErrorPopup message={actionError} onClose={() => setActionError(null)} /> : null}
     </div>
   )
 }

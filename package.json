@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "supabase:deploy:hello": "supabase functions deploy hello",
-    "supabase:functions:serve": "supabase functions serve hello --no-verify-jwt"
+    "supabase:deploy:receipt-ocr": "supabase functions deploy receipt-ocr",
+    "supabase:functions:serve": "supabase functions serve receipt-ocr --no-verify-jwt"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
