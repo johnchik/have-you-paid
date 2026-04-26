@@ -1,6 +1,6 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   IoAddOutline,
   IoArrowUndoOutline,
@@ -156,6 +156,7 @@ function allocateBulkEqualSplit(
 
 export function SessionPage() {
   const { sessionId } = useParams()
+  const navigate = useNavigate()
   const { user, ready } = useAuth()
   const guestToken = useMemo(() => getOrCreateGuestToken(), [])
 
@@ -175,6 +176,8 @@ export function SessionPage() {
   const [manualExpenseName, setManualExpenseName] = useState('')
   const [manualExpenseAmount, setManualExpenseAmount] = useState('')
   const [savingSessionName, setSavingSessionName] = useState(false)
+  const [deletingSession, setDeletingSession] = useState(false)
+  const [leavingSession, setLeavingSession] = useState(false)
   const [addingPlaceholder, setAddingPlaceholder] = useState(false)
   const [addingExpense, setAddingExpense] = useState(false)
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
@@ -539,6 +542,24 @@ export function SessionPage() {
     }
   }
 
+  const deleteSession = async () => {
+    if (!isHost || !session) return
+    const confirmed = window.confirm(`Delete "${session.name}"? This will remove the session, members, expenses, claims, settlements, and receipt.`)
+    if (!confirmed) return
+
+    setDeletingSession(true)
+    setActionError(null)
+    try {
+      const { error } = await supabase.from('sessions').delete().eq('id', session.id)
+      if (error) throw error
+      navigate('/')
+    } catch (error: unknown) {
+      setActionError(formatErrorMessage(error))
+    } finally {
+      setDeletingSession(false)
+    }
+  }
+
   const uploadReceipt = async (file: File) => {
     if (!isHost || !sessionId) return
     if (!file.type.startsWith('image/')) {
@@ -627,41 +648,62 @@ export function SessionPage() {
 
     setActionError(null)
     try {
-      const affectedExpenses = expenses.filter((expense) =>
-        claims.some((claim) => claim.expense_id === expense.id && claim.member_id === member.id),
-      )
-
-      const { error: deleteMemberError } = await supabase.from('session_members').delete().eq('id', member.id)
-      if (deleteMemberError) throw deleteMemberError
-
-      for (const expense of affectedExpenses) {
-        const remainingMemberIds = [
-          ...new Set(
-            claims
-              .filter((claim) => claim.expense_id === expense.id && claim.member_id !== member.id)
-              .map((claim) => claim.member_id),
-          ),
-        ]
-
-        const { error: deleteClaimsError } = await supabase.from('expense_claims').delete().eq('expense_id', expense.id)
-        if (deleteClaimsError) throw deleteClaimsError
-
-        if (remainingMemberIds.length === 0) continue
-
-        const shareAmounts = distributeEvenAmounts(expense.amount, remainingMemberIds.length)
-        const rows = remainingMemberIds.map((memberId, index) => ({
-          expense_id: expense.id,
-          member_id: memberId,
-          share_amount: shareAmounts[index],
-        }))
-
-        const { error: insertClaimsError } = await supabase.from('expense_claims').insert(rows)
-        if (insertClaimsError) throw insertClaimsError
-      }
+      await deleteMemberAndRebalance(member)
 
       await load()
     } catch (error: unknown) {
       setActionError(formatErrorMessage(error))
+    }
+  }
+
+  const deleteMemberAndRebalance = async (member: SessionMember) => {
+    const affectedExpenses = expenses.filter((expense) =>
+      claims.some((claim) => claim.expense_id === expense.id && claim.member_id === member.id),
+    )
+
+    const { error: deleteMemberError } = await supabase.from('session_members').delete().eq('id', member.id)
+    if (deleteMemberError) throw deleteMemberError
+
+    for (const expense of affectedExpenses) {
+      const remainingMemberIds = [
+        ...new Set(
+          claims
+            .filter((claim) => claim.expense_id === expense.id && claim.member_id !== member.id)
+            .map((claim) => claim.member_id),
+        ),
+      ]
+
+      const { error: deleteClaimsError } = await supabase.from('expense_claims').delete().eq('expense_id', expense.id)
+      if (deleteClaimsError) throw deleteClaimsError
+
+      if (remainingMemberIds.length === 0) continue
+
+      const shareAmounts = distributeEvenAmounts(expense.amount, remainingMemberIds.length)
+      const rows = remainingMemberIds.map((memberId, index) => ({
+        expense_id: expense.id,
+        member_id: memberId,
+        share_amount: shareAmounts[index],
+      }))
+
+      const { error: insertClaimsError } = await supabase.from('expense_claims').insert(rows)
+      if (insertClaimsError) throw insertClaimsError
+    }
+  }
+
+  const leaveSession = async () => {
+    if (isHost || !currentMember) return
+    const confirmed = window.confirm(`Leave "${session?.name ?? 'this session'}"? Your claimed expenses and settlements in this session will be removed.`)
+    if (!confirmed) return
+
+    setLeavingSession(true)
+    setActionError(null)
+    try {
+      await deleteMemberAndRebalance(currentMember)
+      navigate('/')
+    } catch (error: unknown) {
+      setActionError(formatErrorMessage(error))
+    } finally {
+      setLeavingSession(false)
     }
   }
 
@@ -1152,8 +1194,23 @@ export function SessionPage() {
                       <span>{savingSessionName ? 'Saving…' : 'Save host details'}</span>
                     </span>
                   </button>
+                  <button type="button" className="btn btnDanger" disabled={deletingSession} onClick={() => void deleteSession()}>
+                    {deletingSession ? 'Deleting…' : 'Delete session'}
+                  </button>
                 </div>
 
+              </div>
+            ) : currentMember ? (
+              <div className="stack">
+                <div className="inlineFormCard">
+                  <div className="stack compactStack growField">
+                    <span className="softLabel">Session membership</span>
+                    <span className="muted">Leave this session if you no longer want your claims and settlements included.</span>
+                  </div>
+                  <button type="button" className="btn btnDanger" disabled={leavingSession} onClick={() => void leaveSession()}>
+                    {leavingSession ? 'Leaving…' : 'Leave session'}
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>

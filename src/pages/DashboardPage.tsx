@@ -364,7 +364,9 @@ export function DashboardPage() {
                     <td>{new Date(record.expenseCreatedAt).toLocaleDateString()}</td>
                     <td>
                       <div className="stack compactStack">
-                        <strong>{record.sessionName}</strong>
+                        <strong>
+                          <Link to={`/session/${record.sessionId}`}>{record.sessionName}</Link>
+                        </strong>
                         <span className="muted">{record.hostName}</span>
                       </div>
                     </td>

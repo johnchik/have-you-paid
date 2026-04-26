@@ -129,7 +129,6 @@ export function computeDashboardSummary(args: {
 
   for (const member of members.filter((entry) => entry.user_id === currentUserId)) {
     const memberClaimed = claimsByMemberId.get(member.id) ?? 0
-    const memberPaid = paidByMemberId.get(member.id) ?? 0
 
     if (member.is_host) {
       const sessionMembers = members.filter((entry) => entry.session_id === member.session_id && !entry.is_host)
@@ -145,7 +144,7 @@ export function computeDashboardSummary(args: {
       continue
     }
 
-    actualSpent = roundCurrency(actualSpent + memberPaid)
+    actualSpent = roundCurrency(actualSpent + memberClaimed)
   }
 
   return {
