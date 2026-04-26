@@ -25,6 +25,8 @@ export type OcrLine = {
   confidence: number | null
 }
 
+type ReceiptOcrSource = Blob | { filePath: string; sessionId: string }
+
 function nextId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -198,17 +200,26 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary)
 }
 
-export async function runReceiptOcr(image: Blob, onProgress?: (message: string) => void): Promise<OcrDraftItem[]> {
-  onProgress?.('Preparing image…')
-  const imageBase64 = await blobToBase64(image)
+export async function runReceiptOcr(source: ReceiptOcrSource, onProgress?: (message: string) => void): Promise<OcrDraftItem[]> {
+  let body: { imageBase64?: string; mimeType?: string; filePath?: string; sessionId?: string }
+
+  if (source instanceof Blob) {
+    onProgress?.('Preparing image…')
+    const imageBase64 = await blobToBase64(source)
+    body = {
+      imageBase64,
+      mimeType: source.type || 'image/jpeg',
+    }
+  } else {
+    onProgress?.('Loading uploaded receipt…')
+    body = {
+      filePath: source.filePath,
+      sessionId: source.sessionId,
+    }
+  }
 
   onProgress?.('Sending receipt to Google OCR…')
-  const { data, error } = await supabase.functions.invoke('receipt-ocr', {
-    body: {
-      imageBase64,
-      mimeType: image.type || 'image/jpeg',
-    },
-  })
+  const { data, error } = await supabase.functions.invoke('receipt-ocr', { body })
 
   if (error) {
     throw new Error(error.message || 'Receipt OCR request failed.')
@@ -235,6 +246,14 @@ export async function runReceiptOcr(image: Blob, onProgress?: (message: string) 
   )
   console.groupEnd()
 
-  onProgress?.(`Google OCR returned ${rawLines.length} lines.`)
+  if (typeof data?.cleanupError === 'string' && data.cleanupError.trim().length > 0) {
+    console.warn('[OCR] Receipt cleanup warning', data.cleanupError)
+    onProgress?.('OCR finished, but receipt cleanup still needs attention.')
+  } else if (!(source instanceof Blob)) {
+    onProgress?.('OCR finished and the uploaded receipt was deleted.')
+  } else {
+    onProgress?.(`Google OCR returned ${rawLines.length} lines.`)
+  }
+
   return parseReceiptLines(rawLines)
 }

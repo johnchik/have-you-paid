@@ -6,8 +6,6 @@ import {
   IoArrowUndoOutline,
   IoCameraOutline,
   IoCheckmarkCircleOutline,
-  IoChevronDownOutline,
-  IoChevronUpOutline,
   IoCloudUploadOutline,
   IoCloseCircleOutline,
   IoCopyOutline,
@@ -26,6 +24,7 @@ import { OcrReviewDialog } from '../components/OcrReviewDialog'
 import { useAuth } from '../lib/auth'
 import { formatErrorMessage } from '../lib/errors'
 import { getOrCreateGuestToken } from '../lib/guestIdentity'
+import { compressReceiptImage } from '../lib/imageCompression'
 import type { OcrDraftItem } from '../lib/ocr'
 import { runReceiptOcr } from '../lib/ocr'
 import { formatSessionCreatedAt } from '../lib/sessionDisplay'
@@ -168,7 +167,6 @@ export function SessionPage() {
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null)
   const [hostProfile, setHostProfile] = useState<Profile | null>(null)
 
   const [sessionNameDraft, setSessionNameDraft] = useState('')
@@ -183,7 +181,6 @@ export function SessionPage() {
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
   const [settlementBusyMemberId, setSettlementBusyMemberId] = useState<string | null>(null)
   const [joinUrlCopied, setJoinUrlCopied] = useState(false)
-  const [receiptExpanded, setReceiptExpanded] = useState(false)
 
   const [ocrBusy, setOcrBusy] = useState(false)
   const [ocrSaving, setOcrSaving] = useState(false)
@@ -292,20 +289,6 @@ export function SessionPage() {
       setExpenses(loadedExpenses)
       setClaims(loadedClaims)
       setSettlements((settlementRows ?? []) as Settlement[])
-
-      const receiptPath = (sessionRow as Session).receipt_storage_path?.trim()
-      if (receiptPath) {
-        const { data: signedData, error: signedError } = await supabase.storage
-          .from('receipts')
-          .createSignedUrl(receiptPath, 3600)
-        if (signedError) {
-          setReceiptImageUrl(null)
-        } else {
-          setReceiptImageUrl(signedData?.signedUrl ?? null)
-        }
-      } else {
-        setReceiptImageUrl(null)
-      }
     } catch (error: unknown) {
       setLoadError(formatErrorMessage(error))
     } finally {
@@ -362,10 +345,6 @@ export function SessionPage() {
     const timer = window.setTimeout(() => setActionError(null), 4500)
     return () => window.clearTimeout(timer)
   }, [actionError])
-
-  useEffect(() => {
-    setReceiptExpanded(!session?.receipt_storage_path)
-  }, [session?.receipt_storage_path])
 
   const currentMember = useMemo(() => {
     const byGuestToken = members.find((member) => member.guest_token === guestToken)
@@ -569,14 +548,17 @@ export function SessionPage() {
 
     setUploadingReceipt(true)
     setActionError(null)
+    setOcrProgressMessage('Compressing image…')
 
     try {
-      const extension = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+      const compressedFile = await compressReceiptImage(file)
+      const extension = compressedFile.name.split('.').pop()?.toLowerCase() ?? 'jpg'
       const path = `${sessionId}/receipt.${extension}`
 
-      const { error: uploadError } = await supabase.storage.from('receipts').upload(path, file, {
+      setOcrProgressMessage('Uploading receipt…')
+      const { error: uploadError } = await supabase.storage.from('receipts').upload(path, compressedFile, {
         upsert: true,
-        contentType: file.type || 'image/jpeg',
+        contentType: compressedFile.type || 'image/jpeg',
       })
       if (uploadError) throw uploadError
 
@@ -589,11 +571,14 @@ export function SessionPage() {
       if (receiptFileInputRef.current) receiptFileInputRef.current.value = ''
       if (receiptCaptureInputRef.current) receiptCaptureInputRef.current.value = ''
 
-      await load()
+      await runOcrForStoredReceipt(path)
     } catch (error: unknown) {
       setActionError(formatErrorMessage(error))
     } finally {
       setUploadingReceipt(false)
+      if (!ocrBusy) {
+        setOcrProgressMessage(null)
+      }
     }
   }
 
@@ -898,7 +883,9 @@ export function SessionPage() {
     setOcrProgressMessage(null)
 
     try {
-      const items = await runReceiptOcr(file, (message) => setOcrProgressMessage(message))
+      setOcrProgressMessage('Compressing image…')
+      const compressedFile = await compressReceiptImage(file)
+      const items = await runReceiptOcr(compressedFile, (message) => setOcrProgressMessage(message))
       setOcrDraftItems(items)
       setOcrReviewOpen(true)
     } catch (error: unknown) {
@@ -908,22 +895,18 @@ export function SessionPage() {
     }
   }
 
-  const runOcrOnSavedReceipt = async () => {
-    if (!isHost || !receiptImageUrl) return
+  const runOcrForStoredReceipt = async (filePath: string) => {
+    if (!isHost || !sessionId || !filePath) return
 
     setOcrBusy(true)
     setActionError(null)
-    setOcrProgressMessage('Loading saved receipt…')
+    setOcrProgressMessage('Loading uploaded receipt…')
 
     try {
-      const response = await fetch(receiptImageUrl)
-      if (!response.ok) {
-        throw new Error('Failed to load the saved receipt image.')
-      }
-      const blob = await response.blob()
-      const items = await runReceiptOcr(blob, (message) => setOcrProgressMessage(message))
+      const items = await runReceiptOcr({ filePath, sessionId }, (message) => setOcrProgressMessage(message))
       setOcrDraftItems(items)
       setOcrReviewOpen(true)
+      await load()
     } catch (error: unknown) {
       setActionError(formatErrorMessage(error))
     } finally {
@@ -1740,19 +1723,13 @@ export function SessionPage() {
               <IoReceiptOutline size={15} aria-hidden />
               <span>Evidence</span>
             </div>
-            <h2 className="sectionTitle">Receipt</h2>
-            <p className="muted">Keep the original image with the session so members can review context while claiming expenses.</p>
+            <h2 className="sectionTitle">Receipt OCR</h2>
+            <p className="muted">Receipt images are used only as a temporary OCR buffer and are deleted after extraction.</p>
           </div>
-          <button type="button" className="btn btnGhost" onClick={() => setReceiptExpanded((current) => !current)}>
-            <span className="btnContent">
-              {receiptExpanded ? <IoChevronUpOutline size={16} aria-hidden /> : <IoChevronDownOutline size={16} aria-hidden />}
-              <span>{receiptExpanded ? 'Collapse' : receiptImageUrl ? 'Expand receipt' : 'Open receipt'}</span>
-            </span>
-          </button>
         </div>
 
-        <div className={`receiptAccordion ${receiptExpanded ? 'receiptAccordionOpen' : ''}`}>
-          {isHost ? (
+        {isHost ? (
+          <div className="stack compactStack">
             <div className="toolbarPills">
               <label className="btn btnPrimary">
                 <span className="btnContent">
@@ -1764,7 +1741,7 @@ export function SessionPage() {
                   type="file"
                   accept="image/*"
                   hidden
-                  disabled={uploadingReceipt}
+                  disabled={uploadingReceipt || ocrBusy}
                   onChange={(event) => {
                     const file = event.target.files?.[0]
                     if (file) void uploadReceipt(file)
@@ -1783,7 +1760,7 @@ export function SessionPage() {
                   accept="image/*"
                   capture="environment"
                   hidden
-                  disabled={uploadingReceipt}
+                  disabled={uploadingReceipt || ocrBusy}
                   onChange={(event) => {
                     const file = event.target.files?.[0]
                     if (file) void uploadReceipt(file)
@@ -1792,27 +1769,35 @@ export function SessionPage() {
                 />
               </label>
               {session.receipt_storage_path ? (
-                <button type="button" className="btn btnGhost" disabled={ocrBusy} onClick={() => void runOcrOnSavedReceipt()}>
+                <button
+                  type="button"
+                  className="btn btnGhost"
+                  disabled={ocrBusy || uploadingReceipt}
+                  onClick={() => void runOcrForStoredReceipt(session.receipt_storage_path ?? '')}
+                >
                   <span className="btnContent">
                     <IoSparklesOutline size={17} aria-hidden />
-                    <span>{ocrBusy ? 'Running OCR…' : 'Extract expenses'}</span>
+                    <span>{ocrBusy ? 'Running OCR…' : 'Extract pending receipt'}</span>
                   </span>
                 </button>
               ) : null}
             </div>
-          ) : null}
-
-          {receiptImageUrl ? (
-            <img className="receiptImg" src={receiptImageUrl} alt="Uploaded receipt" />
-          ) : (
+            {ocrProgressMessage ? <span className="muted">{ocrProgressMessage}</span> : null}
             <div className="emptyState">
               <IoReceiptOutline size={20} aria-hidden />
-              <p className="muted">No receipt image uploaded yet.</p>
+              <p className="muted">
+                {session.receipt_storage_path
+                  ? 'A receipt image is queued for OCR. It will be deleted automatically after extraction.'
+                  : 'No receipt image is currently stored. Uploading a receipt runs OCR and then deletes the file.'}
+              </p>
             </div>
-          )}
-        </div>
-
-        {!receiptExpanded && receiptImageUrl ? <p className="softLabel">Receipt image attached. Expand to view or rerun OCR.</p> : null}
+          </div>
+        ) : (
+          <div className="emptyState">
+            <IoReceiptOutline size={20} aria-hidden />
+            <p className="muted">Receipt images are not retained after OCR. Review the extracted expenses list below instead.</p>
+          </div>
+        )}
       </section>
 
       {ocrReviewOpen ? (
