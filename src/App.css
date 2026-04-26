@@ -44,6 +44,10 @@
   color: #075985;
 }
 
+.appTopBarButton {
+  padding: 0.45rem 0.7rem;
+}
+
 .userBadge {
   font-size: 0.9rem;
   font-weight: 600;
@@ -1046,6 +1050,104 @@
   padding: 0.95rem;
 }
 
+.paymentPrefsLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem 1rem;
+  align-items: end;
+  padding: 0.95rem;
+  border-radius: 20px;
+  border: 1px solid var(--line-soft);
+  background: #f7f9fc;
+}
+
+.sessionPaymentGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.fullRowField {
+  grid-column: 1 / -1;
+}
+
+.chipRow,
+.actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.actionsRow {
+  justify-content: flex-end;
+  align-self: center;
+}
+
+.methodChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  padding: 0.75rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: #eef2f7;
+  color: #475569;
+  font-weight: 800;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.methodChip:hover {
+  transform: translateY(-1px);
+}
+
+.methodChipSelected {
+  background: #e8f0fe;
+  border-color: rgba(26, 115, 232, 0.24);
+  color: #174ea6;
+  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.08);
+}
+
+.methodChipIcon,
+.methodChipCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.methodChipCheck {
+  opacity: 0.45;
+}
+
+.methodChipSelected .methodChipCheck {
+  opacity: 1;
+}
+
+.choicePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  background: #ffffff;
+  color: var(--ink-strong);
+  font-weight: 700;
+}
+
+.choicePill input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
 .sharePanel {
   padding: 1rem;
   display: flex;
@@ -1151,7 +1253,8 @@
   font-weight: 700;
 }
 
-.field input {
+.field input,
+.field textarea {
   min-height: 3rem;
   padding: 0.8rem 0.95rem;
   border-radius: 12px;
@@ -1161,10 +1264,22 @@
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
-.field input:focus {
+.field textarea {
+  resize: vertical;
+  width: 100%;
+  line-height: 1.45;
+  font: inherit;
+}
+
+.field input:focus,
+.field textarea:focus {
   outline: none;
   border-color: rgba(26, 115, 232, 0.36);
   box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.12);
+}
+
+.commentTextarea {
+  min-height: 7.5rem;
 }
 
 .inputWithPrefix {
@@ -1381,6 +1496,149 @@
   animation: toastIn 220ms ease;
 }
 
+.paymentInstructionCard,
+.dashboardPanel,
+.dashboardCurrencyCard {
+  border-radius: 20px;
+  border: 1px solid var(--line-soft);
+  background: #f7f9fc;
+}
+
+.paymentInstructionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.paymentInstructionTitle,
+.dashboardPanelTitle {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.paymentInstructionGrid,
+.dashboardCharts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.paymentBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.paymentMethodGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.prewrapText {
+  white-space: pre-wrap;
+}
+
+.richCommentText {
+  font-size: 1rem;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.inlineTextLink {
+  color: #174ea6;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.inlineTextLink:hover {
+  color: #0b57d0;
+}
+
+.paymentInstructionRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid var(--line-soft);
+}
+
+.paymentInstructionHighlight {
+  background: linear-gradient(180deg, #eef4ff 0%, #e9f0ff 100%);
+  border-color: rgba(26, 115, 232, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.dashboardPanel {
+  padding: 1rem;
+}
+
+.dashboardBarList,
+.dashboardMonthList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dashboardBarRow,
+.dashboardMonthRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.dashboardBarMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dashboardBarTrack {
+  width: 100%;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: #dbe7fb;
+  overflow: hidden;
+}
+
+.dashboardBarFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1a73e8 0%, #5ca8ff 100%);
+}
+
+.dashboardMonthRow {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.65rem 0.8rem;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid var(--line-soft);
+}
+
+.dashboardStatGrid {
+  grid-template-columns: 1fr;
+}
+
+.dashboardCurrencyCard {
+  padding: 1rem;
+}
+
+.dashboardCurrencyMetrics {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -1450,6 +1708,27 @@
   .inlineFormCard > *,
   .bulkAssignBar > * {
     width: 100%;
+  }
+
+  .paymentPrefsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .actionsRow {
+    justify-content: flex-start;
+  }
+
+  .sessionPaymentGrid,
+  .paymentInstructionGrid,
+  .dashboardCharts,
+  .dashboardCurrencyMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .paymentInstructionRow,
+  .dashboardBarMeta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .tableWrap {

@@ -5,6 +5,9 @@ export type Session = {
   name: string
   currency: string
   status: SessionStatus
+  host_payment_comment: string | null
+  accepts_fps: boolean | null
+  accepts_payme: boolean | null
   receipt_storage_path: string | null
   created_at: string
 }
@@ -61,5 +64,9 @@ export type Settlement = {
 export type Profile = {
   id: string
   display_name: string
+  default_payment_comment: string | null
+  default_accepts_fps: boolean | null
+  default_accepts_payme: boolean | null
+  payment_qr_url: string | null
   updated_at: string
 }

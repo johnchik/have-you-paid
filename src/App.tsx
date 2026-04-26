@@ -5,6 +5,7 @@ import { AppLayout } from './components/AppLayout'
 import { Home } from './pages/Home'
 import { JoinPage } from './pages/JoinPage'
 import { SessionPage } from './pages/SessionPage'
+import { DashboardPage } from './pages/DashboardPage'
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
 
@@ -15,6 +16,7 @@ export default function App() {
         <Routes>
           <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/join/:sessionId" element={<JoinPage />} />
             <Route path="/session/:sessionId" element={<SessionPage />} />
           </Route>

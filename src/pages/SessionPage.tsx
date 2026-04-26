@@ -9,8 +9,10 @@ import {
   IoChevronDownOutline,
   IoChevronUpOutline,
   IoCloudUploadOutline,
+  IoCloseCircleOutline,
   IoCopyOutline,
   IoCreateOutline,
+  IoFlashOutline,
   IoPersonAddOutline,
   IoPricetagOutline,
   IoQrCodeOutline,
@@ -35,7 +37,7 @@ import {
   summarizeExpenseClaims,
 } from '../lib/settleUp'
 import { supabase } from '../lib/supabaseClient'
-import type { Expense, ExpenseClaim, Session, SessionMember, Settlement } from '../lib/types'
+import type { Expense, ExpenseClaim, Profile, Session, SessionMember, Settlement } from '../lib/types'
 import { joinSessionUrl } from '../lib/urls'
 import { isUuid } from '../lib/uuid'
 
@@ -52,6 +54,20 @@ function getSessionStatusLabel(status: Session['status']) {
 function parseAmount(value: string) {
   const parsed = Number.parseFloat(value)
   return Number.isFinite(parsed) ? roundCurrency(parsed) : null
+}
+
+function renderLinkedText(value: string) {
+  const parts = value.split(/(https?:\/\/[^\s]+)/g)
+  return parts.map((part, index) => {
+    if (/^https?:\/\/[^\s]+$/.test(part)) {
+      return (
+        <a key={`${part}-${index}`} href={part} target="_blank" rel="noreferrer" className="inlineTextLink">
+          {part}
+        </a>
+      )
+    }
+    return <span key={`${part}-${index}`}>{part}</span>
+  })
 }
 
 function buildCustomAmountDraft(
@@ -152,6 +168,7 @@ export function SessionPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null)
+  const [hostProfile, setHostProfile] = useState<Profile | null>(null)
 
   const [sessionNameDraft, setSessionNameDraft] = useState('')
   const [placeholderName, setPlaceholderName] = useState('')
@@ -213,6 +230,29 @@ export function SessionPage() {
         .eq('session_id', sessionId)
         .order('created_at', { ascending: true })
       if (memberError) throw memberError
+      const loadedMembers = (memberRows ?? []) as SessionMember[]
+      const loadedHostMember = loadedMembers.find((member) => member.is_host) ?? null
+
+      let loadedHostProfile: Profile | null = null
+      if (loadedHostMember?.user_id) {
+        const { data: hostPaymentRows, error: hostPaymentError } = await supabase.rpc('get_session_host_payment_details', {
+          p_session_id: sessionId,
+        })
+        if (hostPaymentError) throw hostPaymentError
+
+        const hostPaymentRow = Array.isArray(hostPaymentRows) ? hostPaymentRows[0] : null
+        if (hostPaymentRow) {
+          loadedHostProfile = {
+            id: loadedHostMember.user_id,
+            display_name: hostPaymentRow.display_name ?? loadedHostMember.display_name,
+            default_payment_comment: hostPaymentRow.default_payment_comment ?? null,
+            default_accepts_fps: hostPaymentRow.default_accepts_fps ?? false,
+            default_accepts_payme: hostPaymentRow.default_accepts_payme ?? false,
+            payment_qr_url: null,
+            updated_at: '',
+          }
+        }
+      }
 
       const { data: expenseRows, error: expenseError } = await supabase
         .from('expenses')
@@ -244,7 +284,8 @@ export function SessionPage() {
 
       setSession(sessionRow as Session)
       setSessionNameDraft((sessionRow as Session).name)
-      setMembers((memberRows ?? []) as SessionMember[])
+      setHostProfile(loadedHostProfile)
+      setMembers(loadedMembers)
       setExpenses(loadedExpenses)
       setClaims(loadedClaims)
       setSettlements((settlementRows ?? []) as Settlement[])
@@ -483,7 +524,12 @@ export function SessionPage() {
     setSavingSessionName(true)
     setActionError(null)
     try {
-      const { error } = await supabase.from('sessions').update({ name: trimmed }).eq('id', session.id)
+      const { error } = await supabase
+        .from('sessions')
+        .update({
+          name: trimmed,
+        })
+        .eq('id', session.id)
       if (error) throw error
       await load()
     } catch (error: unknown) {
@@ -939,6 +985,10 @@ export function SessionPage() {
     window.setTimeout(() => setJoinUrlCopied(false), 1600)
   }
 
+  const combinedHostPaymentComment = [hostProfile?.default_payment_comment?.trim(), session?.host_payment_comment?.trim()]
+    .filter((part) => Boolean(part))
+    .join('\n')
+
   const updateSplitMode = (nextMode: SplitMode) => {
     if (!editingExpense) return
     setSplitMode(nextMode)
@@ -1086,21 +1136,24 @@ export function SessionPage() {
             </div>
 
             {isHost ? (
-              <div className="inlineFormCard">
-                <label className="field growField">
-                  Session name
-                  <input
-                    type="text"
-                    value={sessionNameDraft}
-                    onChange={(event) => setSessionNameDraft(event.target.value)}
-                  />
-                </label>
-                <button type="button" className="btn btnPrimary" disabled={savingSessionName} onClick={() => void saveSessionName()}>
-                  <span className="btnContent">
-                    <IoCreateOutline size={17} aria-hidden />
-                    <span>{savingSessionName ? 'Saving…' : 'Save name'}</span>
-                  </span>
-                </button>
+              <div className="stack">
+                <div className="inlineFormCard">
+                  <label className="field growField">
+                    Session name
+                    <input
+                      type="text"
+                      value={sessionNameDraft}
+                      onChange={(event) => setSessionNameDraft(event.target.value)}
+                    />
+                  </label>
+                  <button type="button" className="btn btnPrimary" disabled={savingSessionName} onClick={() => void saveSessionName()}>
+                    <span className="btnContent">
+                      <IoCreateOutline size={17} aria-hidden />
+                      <span>{savingSessionName ? 'Saving…' : 'Save host details'}</span>
+                    </span>
+                  </button>
+                </div>
+
               </div>
             ) : null}
           </div>
@@ -1482,6 +1535,69 @@ export function SessionPage() {
               </p>
             </div>
           </div>
+
+          {combinedHostPaymentComment || hostProfile?.default_accepts_fps || hostProfile?.default_accepts_payme ? (
+            <div className="paymentInstructionCard">
+              <div className="paymentInstructionHead">
+                <div>
+                  <h3 className="paymentInstructionTitle">Host payment details</h3>
+                  <p className="muted">Use these details when you mark a settlement as paid.</p>
+                </div>
+              </div>
+              <div className="paymentInstructionGrid">
+                <div className="paymentMethodGroups">
+                  <div className="stack compactStack">
+                    <span className="softLabel">Accept</span>
+                    <div className="paymentBadgeRow">
+                      {hostProfile?.default_accepts_fps ? (
+                        <span className="statusBadge statusBadgeSuccess">
+                          <IoFlashOutline size={15} aria-hidden />
+                          <span>FPS</span>
+                        </span>
+                      ) : null}
+                      {hostProfile?.default_accepts_payme ? (
+                        <span className="statusBadge statusBadgeSuccess">
+                          <IoWalletOutline size={15} aria-hidden />
+                          <span>PayMe</span>
+                        </span>
+                      ) : null}
+                      {!hostProfile?.default_accepts_fps && !hostProfile?.default_accepts_payme ? (
+                        <span className="muted">None</span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {!hostProfile?.default_accepts_fps || !hostProfile?.default_accepts_payme ? (
+                    <div className="stack compactStack">
+                      <span className="softLabel">Not accept</span>
+                      <div className="paymentBadgeRow">
+                        {!hostProfile?.default_accepts_fps ? (
+                          <span className="statusBadge statusBadgeWarm">
+                            <IoCloseCircleOutline size={15} aria-hidden />
+                            <span>FPS</span>
+                          </span>
+                        ) : null}
+                        {!hostProfile?.default_accepts_payme ? (
+                          <span className="statusBadge statusBadgeWarm">
+                            <IoCloseCircleOutline size={15} aria-hidden />
+                            <span>PayMe</span>
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                {combinedHostPaymentComment ? (
+                  <div className="paymentInstructionRow paymentInstructionHighlight">
+                    <div className="stack compactStack">
+                      <span className="softLabel">Comment</span>
+                      <strong className="prewrapText richCommentText">{renderLinkedText(combinedHostPaymentComment)}</strong>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="tableWrap">
             <table className="table tableActionLast dataTable">

@@ -4,7 +4,7 @@ import { defaultGuestDisplayName } from '../lib/guestIdentity'
 import { useDisplayName } from '../lib/useDisplayName'
 
 export function AppLayout() {
-  const { user, ready } = useAuth()
+  const { user, ready, signOut } = useAuth()
   const displayName = useDisplayName(user?.id)
   const guestName = defaultGuestDisplayName()
 
@@ -18,8 +18,21 @@ export function AppLayout() {
               {user ? displayName ?? '…' : guestName}
             </span>
             <span className="muted userBadgeHint">
-              {user ? 'Linked account.' : 'Guest mode.'} Change your name in the <Link to="/">home page</Link>.
+              {user ? (
+                <>
+                  Linked account. Open the <Link to="/dashboard">dashboard</Link> or manage details on the <Link to="/">home page</Link>.
+                </>
+              ) : (
+                <>
+                  Guest mode. Change your name or link an account on the <Link to="/">home page</Link>.
+                </>
+              )}
             </span>
+            {user ? (
+              <button type="button" className="btn btnGhost appTopBarButton" onClick={() => void signOut()}>
+                Sign out
+              </button>
+            ) : null}
           </div>
         ) : null}
       </header>
